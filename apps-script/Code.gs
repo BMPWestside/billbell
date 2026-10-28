@@ -71,6 +71,14 @@ function setup() {
   Logger.log('Next: Deploy → New deployment → Web app, then run sendSetupLink.');
 }
 
+/** Checks the app connection from inside Google and shows the app key. */
+function testApp() {
+  var key = PropertiesService.getScriptProperties().getProperty('API_KEY');
+  var out = JSON.parse(doGet({ parameter: { action: 'data', key: key } }).getContent());
+  Logger.log(out.error ? 'Problem: ' + out.error : 'Working. ' + out.bills.length + ' bills, ' + out.providers.length + ' providers.');
+  Logger.log('App key: ' + key);
+}
+
 /** Shows how far the scanner has got. */
 function checkStatus() {
   var props = PropertiesService.getScriptProperties();
@@ -395,6 +403,9 @@ function notify_(title, message, tags) {
 /* ======================= APP API ======================= */
 
 function doGet(e) {
+  try { return doGet_(e); } catch (err) { return json_({ error: 'Scanner error: ' + err.message }); }
+}
+function doGet_(e) {
   var p = (e && e.parameter) || {};
   if (!authOk_(p.key)) return json_({ error: 'Wrong or missing key' });
   if (p.action === 'data' || !p.action) return json_(getData_());
@@ -402,6 +413,9 @@ function doGet(e) {
 }
 
 function doPost(e) {
+  try { return doPost_(e); } catch (err) { return json_({ error: 'Scanner error: ' + err.message }); }
+}
+function doPost_(e) {
   var body = {};
   try { body = JSON.parse(e.postData.contents); } catch (err) { return json_({ error: 'Bad request' }); }
   if (!authOk_(body.key)) return json_({ error: 'Wrong or missing key' });

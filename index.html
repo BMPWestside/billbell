@@ -395,14 +395,16 @@ async function load(showSpin) {
   try {
     const res = await fetch(S.api + '?action=data&key=' + encodeURIComponent(S.key));
     const text = await res.text();
-    let data; try { data = JSON.parse(text); } catch (x) { throw new Error('The scanner asked for a Google sign-in. In Apps Script, set the deployment\'s "Who has access" to Anyone.'); }
+    let data; try { data = JSON.parse(text); } catch (x) { throw new Error('Google sent back a web page instead of your bills. In Apps Script set "Who has access" to Anyone, then deploy a New version.'); }
     if (data.error) throw new Error(data.error);
     normalise(data); ls.set('bb_cache', JSON.stringify(data)); render();
   } catch (e) {
-    S.lastError = e.message;
+    const msg = e.message === 'Load failed' || e.message === 'Failed to fetch'
+      ? 'Google returned an error. Deploy a New version in Apps Script, then try again.' : e.message;
+    S.lastError = msg;
     toast(navigator.onLine === false ? 'Offline — showing your saved bills'
       : /\/dev(\?|$)/.test(S.api) ? 'Your setup link uses the test address. Run sendSetupLink again and open the new link.'
-      : 'Couldn\'t reach your scanner. See Settings → Connection.');
+      : /missing key/i.test(msg) ? 'The app key doesn\'t match. Open the newest setup link.' : msg);
   }
   finally { ptrBusy(false); }
 }
