@@ -33,8 +33,13 @@ var LOG_COLS = ['messageId', 'date', 'subject', 'result'];
 
 /* ======================= SETUP ======================= */
 
-/** Run once. Creates the sheet, folder, keys and timers, then reads past bills. */
+/**
+ * Run once. Creates the sheet, folder, keys and timers. Finishes in under a minute:
+ * past bills and logos are then read in the background every 15 minutes.
+ */
 function setup() {
+  if (typeof DEFAULT_PROVIDERS === 'undefined') throw new Error('Parser.gs is missing. Add a script file named Parser and paste Parser.gs into it.');
+  if (typeof Drive === 'undefined') throw new Error('Drive API is not turned on. Click Services + on the left, choose Drive API, click Add, then run setup again.');
   var props = PropertiesService.getScriptProperties();
   if (!props.getProperty('API_KEY')) props.setProperty('API_KEY', Utilities.getUuid().replace(/-/g, ''));
   if (!props.getProperty('NTFY_TOPIC')) props.setProperty('NTFY_TOPIC', 'billbell-' + Utilities.getUuid().slice(0, 12));
@@ -50,7 +55,6 @@ function setup() {
   }
   var def = ss.getSheetByName('Sheet1'); if (def && ss.getSheets().length > 1) ss.deleteSheet(def);
   getFolder_();
-  try { refreshLogos(); } catch (e) { Logger.log('Logos: ' + e.message); }
 
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('scanBills').timeBased().everyMinutes(15).create();
@@ -58,9 +62,25 @@ function setup() {
 
   if (!GmailApp.getUserLabelByName(CONFIG.LABEL)) GmailApp.createLabel(CONFIG.LABEL);
 
-  scanBills_(CONFIG.BACKFILL_DAYS, true);
+  ScriptApp.newTrigger('refreshLogos').timeBased().after(60 * 1000).create();
+
+  // Past bills are read in the background by the 15-minute timer, a few minutes at a time
+  props.setProperty('BACKFILL_LEFT', '1');
   Logger.log('Setup done. Sheet: ' + ss.getUrl());
+  Logger.log('Your past bills will be read in the background over the next hour or so. Run checkStatus any time to see progress.');
   Logger.log('Next: Deploy → New deployment → Web app, then run sendSetupLink.');
+}
+
+/** Shows how far the scanner has got. */
+function checkStatus() {
+  var props = PropertiesService.getScriptProperties();
+  var bills = readTable_('Bills'), log = readTable_('Log');
+  var errors = log.filter(function (r) { return /^error/.test(r.result); });
+  Logger.log('Emails read: ' + log.length + ' · Bills found: ' + bills.length +
+    ' (' + bills.filter(function (b) { return b.status === 'review'; }).length + ' in Review)');
+  Logger.log(props.getProperty('BACKFILL_LEFT') ? 'Still reading older bills in the background…' : 'All past bills have been read.');
+  Logger.log('Logos saved: ' + readTable_('Providers').filter(function (p) { return p.logo; }).length);
+  errors.slice(-5).forEach(function (r) { Logger.log('Problem with "' + r.subject + '": ' + r.result); });
 }
 
 /** Run after deploying as a web app. Emails you the one-tap link that connects the app. */
@@ -107,7 +127,7 @@ function scanBills_(days, quiet) {
         for (var j = 0; j < msgs.length; j++) {
           var m = msgs[j];
           if (done[m.getId()]) continue;
-          if (Date.now() - started > 270000) {
+          if (Date.now() - started > 240000) {
             if (days >= CONFIG.BACKFILL_DAYS) PropertiesService.getScriptProperties().setProperty('BACKFILL_LEFT', '1');
             Logger.log('Read ' + added.length + ' bills so far. The rest will be read automatically over the next few runs.');
             return { added: added.length, more: true };
@@ -259,7 +279,9 @@ function saveBill_(bill) {
 
 /** PDF or photo → text, using Google Drive's converter (OCR). */
 function ocrText_(blob, name) {
-  var file = Drive.Files.create({ name: 'tmp-' + name, mimeType: 'application/vnd.google-apps.document' }, blob, { ocrLanguage: 'en', fields: 'id' });
+  var file = Drive.Files.create
+    ? Drive.Files.create({ name: 'tmp-' + name, mimeType: 'application/vnd.google-apps.document' }, blob, { ocrLanguage: 'en', fields: 'id' })
+    : Drive.Files.insert({ title: 'tmp-' + name, mimeType: blob.getContentType() }, blob, { ocr: true, ocrLanguage: 'en', convert: true });
   try { return DocumentApp.openById(file.id).getBody().getText(); }
   finally { try { DriveApp.getFileById(file.id).setTrashed(true); } catch (e) {} }
 }
@@ -273,6 +295,7 @@ function ocrText_(blob, name) {
  * To use your own image instead, paste an image link into the logo column.
  */
 function refreshLogos() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'refreshLogos') ScriptApp.deleteTrigger(t); });
   delete _cache['Providers'];
   var done = {};
   readTable_('Providers').forEach(function (p) {
