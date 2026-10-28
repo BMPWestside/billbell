@@ -88,6 +88,8 @@ function sendSetupLink() {
   var props = PropertiesService.getScriptProperties();
   var url = ScriptApp.getService().getUrl();
   if (!url) throw new Error('Deploy the script as a Web app first (Deploy → New deployment).');
+  // The editor sometimes hands back the private test address (/dev), which phones can't use
+  url = url.replace(/\/dev(\?.*)?$/, '/exec');
   var link = CONFIG.APP_URL + '#api=' + encodeURIComponent(url) + '&key=' + props.getProperty('API_KEY');
   var topic = props.getProperty('NTFY_TOPIC');
   var me = Session.getEffectiveUser().getEmail();
