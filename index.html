@@ -850,7 +850,10 @@ document.addEventListener('click', e => {
     case 'saveConn': {
       let a = $('#sApi').value.trim(), k = $('#sKey').value.trim();
       if (a.includes('#api=')) { const p = new URLSearchParams(a.split('#')[1]); a = p.get('api'); k = p.get('key'); }
-      if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(a || '') || !k) return toast('Paste the scanner URL and key');
+      a = (a || '').trim().split('?')[0];
+      if (/googleusercontent\.com/.test(a)) return toast('That\'s a result page address. Copy the Web app URL from Deploy → Manage deployments instead (it ends in /exec).');
+      if (!/^https:\/\/script\.google\.com\/.*\/exec$/.test(a)) return toast('The scanner URL should start with https://script.google.com/macros/s/ and end with /exec');
+      if (!k) return toast('Paste your app key too (run testApp in Apps Script to see it)');
       ls.set('bb_api', a); ls.set('bb_key', k); closeSheet(); load(true); break;
     }
     case 'disconnect': ls.del('bb_api'); ls.del('bb_key'); ls.del('bb_cache'); closeSheet(); load(); break;
