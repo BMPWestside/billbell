@@ -376,11 +376,28 @@ function normalise(data) {
   S.settings = data.settings || {};
 }
 
+/* Talks to the scanner. Uses a script tag (JSONP) because iPhone Safari can block normal requests to Google. */
+let jsonpN = 0;
+function jsonp(params, timeoutMs = 60000) {
+  return new Promise((resolve, reject) => {
+    const cb = '__bb' + Date.now().toString(36) + (jsonpN++);
+    const q = new URLSearchParams({...params, key: S.key, callback: cb, t: Date.now()});
+    const el = document.createElement('script');
+    const done = () => { clearTimeout(timer); delete window[cb]; el.remove(); };
+    const timer = setTimeout(() => { done(); reject(new Error('The scanner took too long to answer. Try again in a minute.')); }, timeoutMs);
+    window[cb] = data => { done(); data && data.error ? reject(new Error(data.error)) : resolve(data); };
+    el.onerror = () => { done(); reject(new Error('Google returned an error page. In Apps Script, check Who has access is Anyone, then deploy a New version.')); };
+    el.src = S.api + (S.api.includes('?') ? '&' : '?') + q.toString();
+    document.head.appendChild(el);
+  });
+}
 async function api(action, payload) {
   if (S.demo) return demoAction(action, payload);
-  const res = await fetch(S.api, { method: 'POST', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({key: S.key, action, ...payload}) });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  let data;
+  if (action === 'upload') {
+    await fetch(S.api, { method: 'POST', mode: 'no-cors', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({key: S.key, action, ...payload}) });
+    data = await jsonp({action: 'data'});
+  } else data = await jsonp({action, payload: JSON.stringify(payload || {})}, action === 'scan' ? 300000 : 60000);
   normalise(data); ls.set('bb_cache', JSON.stringify(data)); render();
 }
 
@@ -390,17 +407,14 @@ async function load(showSpin) {
   $('#demoChip').hidden = !S.demo;
   if (S.demo) { normalise(makeDemo()); render(); return; }
   const cached = ls.get('bb_cache');
-  if (cached && !S.bills.length) { try { normalise(JSON.parse(cached)); render(); } catch (e) {} }
+  if (cached && !S.bills.length) { try { normalise(JSON.parse(cached)); } catch (e) {} }
+  render();
   if (showSpin) ptrBusy(true);
   try {
-    const res = await fetch(S.api + '?action=data&key=' + encodeURIComponent(S.key));
-    const text = await res.text();
-    let data; try { data = JSON.parse(text); } catch (x) { throw new Error('Google sent back a web page instead of your bills. In Apps Script set "Who has access" to Anyone, then deploy a New version.'); }
-    if (data.error) throw new Error(data.error);
+    const data = await jsonp({action: 'data'});
     normalise(data); ls.set('bb_cache', JSON.stringify(data)); render();
   } catch (e) {
-    const msg = e.message === 'Load failed' || e.message === 'Failed to fetch'
-      ? 'Google returned an error. Deploy a New version in Apps Script, then try again.' : e.message;
+    const msg = e.message;
     S.lastError = msg;
     toast(navigator.onLine === false ? 'Offline — showing your saved bills'
       : /\/dev(\?|$)/.test(S.api) ? 'Your setup link uses the test address. Run sendSetupLink again and open the new link.'
@@ -677,7 +691,7 @@ function openSettings() {
     <div class="card"><h3>Connection</h3>
       <div class="sub">${S.demo ? 'Not connected — showing sample bills. Tap the setup link from your BillBell email, or paste the details below.' : 'Connected to your Gmail scanner.'}</div>
       ${S.demo ? `<div class="fields"><label class="f full">Scanner URL<input id="sApi" placeholder="https://script.google.com/macros/s/…/exec"></label><label class="f full">App key<input id="sKey" placeholder="key from the setup email"></label></div><button class="btn navy block" data-act="saveConn">Connect</button>`
-               : `${S.lastError ? `<div class="why">Last problem: ${esc(S.lastError)}</div>` : ''}<p class="small muted" style="word-break:break-all;margin:0 0 10px">${esc(S.api)}</p><div class="acts"><button class="btn navy" data-act="scan">Scan email now</button><button class="btn ghost" data-act="disconnect">Disconnect</button></div>`}
+               : `${S.lastError ? `<div class="why">Last problem: ${esc(S.lastError)}</div>` : ''}<p class="small muted" style="word-break:break-all;margin:0 0 10px">${esc(S.api)} · <a href="${esc(S.api)}?action=data&key=${encodeURIComponent(S.key)}" target="_blank" rel="noopener" style="color:var(--linkc)">Test</a></p><div class="acts"><button class="btn navy" data-act="scan">Scan email now</button><button class="btn ghost" data-act="disconnect">Disconnect</button></div>`}
     </div>
     <div class="card"><h3>Reminders</h3><div class="sub">Phone alerts ${S.settings.remindDays || 2} days before a bill is due, on the day, when overdue, and when a regular bill hasn't arrived. Install the free <b>ntfy</b> app and subscribe to your topic.</div>
       ${t ? `<div class="bpay"><div><div class="lbl">ntfy topic</div><b>${esc(t)}</b></div><button class="copy" data-copy="${esc(t)}" data-what="Topic">Copy</button></div><button class="btn ghost block" data-act="testNotify">Send a test alert</button>` : '<p class="small muted">Shown here once connected.</p>'}

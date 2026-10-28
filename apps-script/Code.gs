@@ -75,6 +75,7 @@ function setup() {
 function testApp() {
   var key = PropertiesService.getScriptProperties().getProperty('API_KEY');
   var out = JSON.parse(doGet({ parameter: { action: 'data', key: key } }).getContent());
+  Logger.log('Web app address: ' + String(ScriptApp.getService().getUrl()).replace(/\/dev(\?.*)?$/, '/exec'));
   Logger.log(out.error ? 'Problem: ' + out.error : 'Working. ' + out.bills.length + ' bills, ' + out.providers.length + ' providers.');
   Logger.log('App key: ' + key);
 }
@@ -402,23 +403,38 @@ function notify_(title, message, tags) {
 
 /* ======================= APP API ======================= */
 
+/*
+ * The app talks to the scanner with GET requests (?action=…&key=…&payload=…&callback=…).
+ * With "callback" the reply is wrapped as JavaScript, which iPhone Safari always accepts.
+ * Photo uploads are too large for a link, so they come in by POST.
+ */
 function doGet(e) {
-  try { return doGet_(e); } catch (err) { return json_({ error: 'Scanner error: ' + err.message }); }
-}
-function doGet_(e) {
   var p = (e && e.parameter) || {};
-  if (!authOk_(p.key)) return json_({ error: 'Wrong or missing key' });
-  if (p.action === 'data' || !p.action) return json_(getData_());
-  return json_({ error: 'Unknown action' });
+  var out;
+  try {
+    if (!authOk_(p.key)) out = { error: 'Wrong or missing key' };
+    else if (!p.action || p.action === 'data') out = getData_();
+    else out = handleAction_(merge_(JSON.parse(p.payload || '{}'), { action: p.action }));
+  } catch (err) { out = { error: 'Scanner error: ' + err.message }; }
+  return reply_(out, p.callback);
 }
 
 function doPost(e) {
-  try { return doPost_(e); } catch (err) { return json_({ error: 'Scanner error: ' + err.message }); }
+  var out;
+  try {
+    var body = JSON.parse(e.postData.contents);
+    out = authOk_(body.key) ? handleAction_(body) : { error: 'Wrong or missing key' };
+  } catch (err) { out = { error: 'Scanner error: ' + err.message }; }
+  return reply_(out);
 }
-function doPost_(e) {
-  var body = {};
-  try { body = JSON.parse(e.postData.contents); } catch (err) { return json_({ error: 'Bad request' }); }
-  if (!authOk_(body.key)) return json_({ error: 'Wrong or missing key' });
+
+function reply_(o, callback) {
+  if (callback && /^[A-Za-z_$][\w$]{0,40}$/.test(callback))
+    return ContentService.createTextOutput(callback + '(' + JSON.stringify(o) + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  return json_(o);
+}
+
+function handleAction_(body) {
   var lock = LockService.getScriptLock(); lock.waitLock(20000);
   try {
     switch (body.action) {
@@ -457,10 +473,10 @@ function doPost_(e) {
       }
       case 'scan': lock.releaseLock(); scanBills(); break;
       case 'testNotify': notify_('BillBell test', 'Reminders are working.', 'white_check_mark'); break;
-      default: return json_({ error: 'Unknown action' });
+      default: return { error: 'Unknown action' };
     }
   } finally { try { lock.releaseLock(); } catch (x) {} }
-  return json_(getData_());
+  return getData_();
 }
 
 function getData_() {
