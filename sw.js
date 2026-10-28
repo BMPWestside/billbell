@@ -1,5 +1,5 @@
 /* BillBell offline support: keeps the app shell on the phone so it opens instantly and without signal. */
-const CACHE = 'billbell-v2';
+const CACHE = 'billbell-v3';
 const SHELL = ['./', 'index.html', 'manifest.json', 'icon.svg', 'icon-180.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

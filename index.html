@@ -24,6 +24,7 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0E1430; --card:#18213F; --ink:#E8ECF7; --muted:#98A2BF; --line:#2A3558; --soft:#232D4F; --soft2:#1E2846; --soft3:#232D4F; --input:#121933; --hist:#33406A; --linkc:#C9D3F2; color-scheme:dark;}}
 :root[data-theme="dark"]{--bg:#0E1430; --card:#18213F; --ink:#E8ECF7; --muted:#98A2BF; --line:#2A3558; --soft:#232D4F; --soft2:#1E2846; --soft3:#232D4F; --input:#121933; --hist:#33406A; --linkc:#C9D3F2; color-scheme:dark;}
+[hidden]{display:none!important}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:Nunito,ui-rounded,system-ui,-apple-system,"Segoe UI",sans-serif;font-weight:600}
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
@@ -385,7 +386,7 @@ async function api(action, payload) {
 
 async function load(showSpin) {
   S.api = ls.get('bb_api') || ''; S.key = ls.get('bb_key') || '';
-  S.demo = !(S.api && S.key);
+  S.demo = !(S.api && S.key); S.lastError = '';
   $('#demoChip').hidden = !S.demo;
   if (S.demo) { normalise(makeDemo()); render(); return; }
   const cached = ls.get('bb_cache');
@@ -393,10 +394,16 @@ async function load(showSpin) {
   if (showSpin) ptrBusy(true);
   try {
     const res = await fetch(S.api + '?action=data&key=' + encodeURIComponent(S.key));
-    const data = await res.json();
+    const text = await res.text();
+    let data; try { data = JSON.parse(text); } catch (x) { throw new Error('The scanner asked for a Google sign-in. In Apps Script, set the deployment\'s "Who has access" to Anyone.'); }
     if (data.error) throw new Error(data.error);
     normalise(data); ls.set('bb_cache', JSON.stringify(data)); render();
-  } catch (e) { toast(navigator.onLine === false ? 'Offline — showing your saved bills' : 'Couldn\'t reach your scanner. Showing saved bills.'); }
+  } catch (e) {
+    S.lastError = e.message;
+    toast(navigator.onLine === false ? 'Offline — showing your saved bills'
+      : /\/dev(\?|$)/.test(S.api) ? 'Your setup link uses the test address. Run sendSetupLink again and open the new link.'
+      : 'Couldn\'t reach your scanner. See Settings → Connection.');
+  }
   finally { ptrBusy(false); }
 }
 
@@ -509,7 +516,7 @@ function renderRing() {
   const C = 2 * Math.PI * 15;
   const pct = prev ? Math.round((cur - prev) / prev * 100) : 0;
   const trend = prev ? `<span class="${pct > 0 ? 'up' : 'down'}">${MON[m - 1]} ${pct > 0 ? '▲' : '▼'}${Math.abs(pct)}%</span>` : `<span>${MON[m - 1]} so far</span>`;
-  $('#ring').innerHTML = `<svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--navy-2)" stroke-width="5"/><circle cx="18" cy="18" r="15" fill="none" stroke="${pct > 0 ? '#FF9B8A' : 'var(--gold)'}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${(frac * C).toFixed(1)} ${C.toFixed(1)}"/></svg><span class="rt"><b>${money0(cur)}</b>${trend}</span>`;
+  $('#ring').innerHTML = `<svg viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="15" fill="none" stroke="var(--navy-2)" stroke-width="5"/>${frac > 0 ? `<circle cx="18" cy="18" r="15" fill="none" stroke="${pct > 0 ? '#FF9B8A' : 'var(--gold)'}" stroke-width="5" stroke-linecap="round" stroke-dasharray="${(frac * C).toFixed(1)} ${C.toFixed(1)}"/>` : ''}</svg><span class="rt"><b>${money0(cur)}</b>${trend}</span>`;
   $('#ring').setAttribute('aria-label', `Spent ${money(cur)} in ${MON[m - 1]}${prev ? `, ${Math.abs(pct)}% ${pct > 0 ? 'more' : 'less'} than ${MON[+prevK.slice(5) - 1]}` : ''}`);
 }
 
@@ -668,7 +675,7 @@ function openSettings() {
     <div class="card"><h3>Connection</h3>
       <div class="sub">${S.demo ? 'Not connected — showing sample bills. Tap the setup link from your BillBell email, or paste the details below.' : 'Connected to your Gmail scanner.'}</div>
       ${S.demo ? `<div class="fields"><label class="f full">Scanner URL<input id="sApi" placeholder="https://script.google.com/macros/s/…/exec"></label><label class="f full">App key<input id="sKey" placeholder="key from the setup email"></label></div><button class="btn navy block" data-act="saveConn">Connect</button>`
-               : `<div class="acts"><button class="btn navy" data-act="scan">Scan email now</button><button class="btn ghost" data-act="disconnect">Disconnect</button></div>`}
+               : `${S.lastError ? `<div class="why">Last problem: ${esc(S.lastError)}</div>` : ''}<p class="small muted" style="word-break:break-all;margin:0 0 10px">${esc(S.api)}</p><div class="acts"><button class="btn navy" data-act="scan">Scan email now</button><button class="btn ghost" data-act="disconnect">Disconnect</button></div>`}
     </div>
     <div class="card"><h3>Reminders</h3><div class="sub">Phone alerts ${S.settings.remindDays || 2} days before a bill is due, on the day, when overdue, and when a regular bill hasn't arrived. Install the free <b>ntfy</b> app and subscribe to your topic.</div>
       ${t ? `<div class="bpay"><div><div class="lbl">ntfy topic</div><b>${esc(t)}</b></div><button class="copy" data-copy="${esc(t)}" data-what="Topic">Copy</button></div><button class="btn ghost block" data-act="testNotify">Send a test alert</button>` : '<p class="small muted">Shown here once connected.</p>'}
