@@ -86,7 +86,11 @@ function sendSetupLink() {
 
 /* ======================= SCANNING ======================= */
 
-function scanBills() { scanBills_(CONFIG.SCAN_DAYS, false); }
+function scanBills() {
+  // If the first big read of past bills didn't finish, keep going with it (quietly)
+  var backfill = !!PropertiesService.getScriptProperties().getProperty('BACKFILL_LEFT');
+  scanBills_(backfill ? CONFIG.BACKFILL_DAYS : CONFIG.SCAN_DAYS, backfill);
+}
 
 function scanBills_(days, quiet) {
   var lock = LockService.getScriptLock();
@@ -103,7 +107,11 @@ function scanBills_(days, quiet) {
         for (var j = 0; j < msgs.length; j++) {
           var m = msgs[j];
           if (done[m.getId()]) continue;
-          if (Date.now() - started > 270000) return { added: added.length, more: true };
+          if (Date.now() - started > 270000) {
+            if (days >= CONFIG.BACKFILL_DAYS) PropertiesService.getScriptProperties().setProperty('BACKFILL_LEFT', '1');
+            Logger.log('Read ' + added.length + ' bills so far. The rest will be read automatically over the next few runs.');
+            return { added: added.length, more: true };
+          }
           var res;
           try { res = processMessage_(m); } catch (e) { res = { result: 'error: ' + e.message, bills: [] }; }
           appendRow_('Log', { messageId: m.getId(), date: iso_(m.getDate()), subject: m.getSubject(), result: res.result });
@@ -113,6 +121,7 @@ function scanBills_(days, quiet) {
       }
       start += 100;
     } while (threads.length === 100);
+    if (days >= CONFIG.BACKFILL_DAYS) PropertiesService.getScriptProperties().deleteProperty('BACKFILL_LEFT');
   } finally { lock.releaseLock(); }
 
   if (!quiet) {
