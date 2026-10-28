@@ -146,6 +146,11 @@ function parseBillText(text, emailDateIso) {
       /(?:ref(?:erence)?\s*(?:number|no\.?)?|cust(?:omer)?\s*ref(?:erence)?|crn)\s*:?\s*(\d[\d ]{3,24}\d)/i
     ]).replace(/\s+/g, '');
   }
+  if (r.billerCode && !r.bpayRef) {
+    r.bpayRef = firstMatch_(t, [
+      /(?:bpay\s*)?(?:ref(?:erence)?\s*(?:number|no\.?)|customer\s*ref(?:erence)?|crn)\s*:?\s*(\d[\d ]{4,24}\d)/i
+    ]).replace(/\s+/g, '');
+  }
   r.period = firstMatch_(t, [
     /(?:bill(?:ing)? period|invoice period|supply period|period)\s*:?\s*(\d{1,2}\s*[a-z]{3}[a-z]*\s*\d{0,4}\s*(?:to|\-|–)\s*\d{1,2}\s*[a-z]{3}[a-z]*\s*\d{2,4})/i
   ]);

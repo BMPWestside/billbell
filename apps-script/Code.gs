@@ -128,6 +128,7 @@ function scanBills_(days, quiet) {
   if (!lock.tryLock(5000)) return { added: 0 };
   var started = Date.now(), added = [];
   try {
+    tidyReview_();
     var done = {};
     readTable_('Log').forEach(function (r) { done[r.messageId] = true; });
     var start = 0, threads;
@@ -206,7 +207,9 @@ function processMessage_(msg) {
     // Known provider but nothing readable → send to Review so nothing is missed
     if (/^skip/.test(r.result)) {
       var p = matchProvider(header + '\n' + body, providers);
-      if (p && /bill|invoice|statement|notice|amount|due/i.test(header + body.slice(0, 2000))) {
+      if (p && hasBillNear_(p.id, emailDate)) {
+        results.push('skip: reminder or copy of a bill already saved');
+      } else if (p && /bill|invoice|statement|notice|amount|due/i.test(header + body.slice(0, 2000))) {
         var b = saveBill_(merge_(base, {
           provider: p.id, category: p.category, amount: 0, dueDate: '', status: 'review',
           reason: 'Couldn\'t read the amount — open the email and enter it', fileUrl: docs[0] ? docs[0].fileUrl : ''
@@ -258,6 +261,7 @@ function handleDoc_(text, emailDate, providers, base) {
   if (rise) bill.flags = 'Up ' + rise + '% on usual';
 
   var saved = saveBill_(bill);
+  if (saved.status !== 'review') clearUnreadable_(saved.provider, bill.issueDate || bill.dueDate || emailDate);
 
   // Credits on this bill mean earlier bills were paid
   if (p && info.credits.length) {
@@ -268,6 +272,40 @@ function handleDoc_(text, emailDate, providers, base) {
       });
   }
   return { result: saved.status + ' ' + (p ? p.id : 'unknown') + ' ' + money_(bill.amount), bill: saved };
+}
+
+/*
+ * Providers often send a short "your bill is ready" or reminder email as well as the bill itself.
+ * Those have no amount, so they shouldn't sit in Review when the real bill is already saved.
+ */
+var NEAR_DAYS = 25;
+function nearDate_(a, b) { return a && b && Math.abs(daysBetween_(a, b)) <= NEAR_DAYS; }
+function isUnreadable_(b) { return b.status === 'review' && !(Number(b.amount) > 0) && /^Couldn't read/.test(b.reason || ''); }
+function hasBillNear_(providerId, iso) {
+  return readTable_('Bills').some(function (b) {
+    return b.provider === providerId && Number(b.amount) > 0 && b.status !== 'ignored' &&
+      (nearDate_(b.issueDate, iso) || nearDate_(b.dueDate, iso) || nearDate_(String(b.createdAt || '').slice(0, 10), iso));
+  });
+}
+function clearUnreadable_(providerId, iso) {
+  readTable_('Bills').filter(function (b) {
+    return b.provider === providerId && isUnreadable_(b) && nearDate_(String(b.createdAt || '').slice(0, 10) || iso, iso);
+  }).forEach(function (b) { updateRow_('Bills', b.id, { status: 'ignored', reason: 'Reminder for a bill already saved' }); });
+}
+/** Removes unreadable Review items whose real bill is already saved (runs before every scan). */
+function tidyReview_() {
+  var bills = readTable_('Bills');
+  bills.filter(isUnreadable_).forEach(function (r) {
+    var when = r.messageId ? emailDateOf_(r.messageId) : String(r.createdAt || '').slice(0, 10);
+    var real = bills.some(function (b) {
+      return b.provider === r.provider && b.id !== r.id && Number(b.amount) > 0 && b.status !== 'ignored' &&
+        (nearDate_(b.issueDate, when) || nearDate_(b.dueDate, when) || (b.emailDate && nearDate_(b.emailDate, when)));
+    });
+    if (real) updateRow_('Bills', r.id, { status: 'ignored', reason: 'Reminder for a bill already saved' });
+  });
+}
+function emailDateOf_(id) {
+  try { return iso_(GmailApp.getMessageById(id).getDate()); } catch (e) { return ''; }
 }
 
 /** Marks a matching unpaid bill as paid, or stores the payment for later. Returns bill id or ''. */

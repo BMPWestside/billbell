@@ -632,7 +632,7 @@ function billCardInner(b) {
   if (b.accountNo) h += `<dt>Account</dt><dd>${esc(b.accountNo)}</dd>`;
   if (b.autopay) h += `<dt>Payment</dt><dd>Automatic debit</dd>`;
   h += `</dl>`;
-  if (b.billerCode && b.status !== 'paid') h += `<div class="bpay"><div><div class="lbl">BPAY biller code</div><b>${esc(b.billerCode)}</b></div><button class="copy" data-copy="${esc(b.billerCode)}" data-what="Biller code">Copy</button><div><div class="lbl">Reference</div><b>${esc(b.bpayRef)}</b></div><button class="copy" data-copy="${esc(b.bpayRef)}" data-what="Reference">Copy</button></div>`;
+  if (b.billerCode && b.status !== 'paid') h += `<div class="bpay"><div><div class="lbl">BPAY biller code</div><b>${esc(b.billerCode)}</b></div><button class="copy" data-copy="${esc(b.billerCode)}" data-what="Biller code">Copy</button>${b.bpayRef ? `<div><div class="lbl">Reference</div><b>${esc(b.bpayRef)}</b></div><button class="copy" data-copy="${esc(b.bpayRef)}" data-what="Reference">Copy</button>` : ''}</div>`;
   h += `<div class="acts">`;
   if (b.fileUrl || b.emailUrl) h += `<a class="btn ghost" href="${esc(b.fileUrl || b.emailUrl)}" target="_blank" rel="noopener">${ICON.file} Bill</a>`;
   if (b.status !== 'paid') {
