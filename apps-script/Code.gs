@@ -14,6 +14,7 @@
 
 var CONFIG = {
   LABEL: 'Billbell',
+  FORWARD_TO: 'sm466991234+billbell@gmail.com',   // the address iCloud forwards bills to
   SHEET_NAME: 'BillBell Data',
   FOLDER_NAME: 'BillBell Bills',
   APP_URL: 'https://bmpwestside.github.io/billbell/',
@@ -133,7 +134,10 @@ function scanBills_(days, quiet) {
     readTable_('Log').forEach(function (r) { done[r.messageId] = true; });
     var start = 0, threads;
     do {
-      threads = GmailApp.search('label:' + CONFIG.LABEL + ' newer_than:' + days + 'd', start, 100);
+      // Forwarded emails keep their original "To", so also look at where Gmail delivered them
+      threads = GmailApp.search('(label:' + CONFIG.LABEL + ' OR deliveredto:' + CONFIG.FORWARD_TO + ') newer_than:' + days + 'd', start, 100);
+      var lbl = GmailApp.getUserLabelByName(CONFIG.LABEL) || GmailApp.createLabel(CONFIG.LABEL);
+      try { if (threads.length) lbl.addToThreads(threads); } catch (e) {}
       for (var i = 0; i < threads.length; i++) {
         var msgs = threads[i].getMessages();
         for (var j = 0; j < msgs.length; j++) {
