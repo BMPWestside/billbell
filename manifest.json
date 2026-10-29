@@ -3,7 +3,7 @@
   "short_name": "BillBell",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#F2F4F9",
+  "background_color": "#1B2B5E",
   "theme_color": "#1B2B5E",
   "icons": [
     {

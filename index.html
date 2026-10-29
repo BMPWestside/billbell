@@ -1103,6 +1103,19 @@ function applyTheme(id) {
   r.setProperty('--gold', t.gold); r.setProperty('--gold-2', t.gold2); r.setProperty('--bill', t.bill);
   const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute('content', t.navy);
   themeIcon(t);
+  themeManifest(t);
+}
+/* The home-screen app paints its edges (under the status bar and below the bottom bar)
+   with the manifest's background colour, so give it the theme colour */
+function themeManifest(t) {
+  try {
+    const base = location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '');
+    const man = {name: 'BillBell', short_name: 'BillBell', start_url: base, scope: base, display: 'standalone', orientation: 'portrait',
+      background_color: t.navy, theme_color: t.navy,
+      icons: [{src: base + 'icon-180.png', sizes: '180x180', type: 'image/png'}, {src: base + 'icon-512.png', sizes: '512x512', type: 'image/png'}]};
+    const link = document.querySelector('link[rel="manifest"]');
+    if (link) link.href = URL.createObjectURL(new Blob([JSON.stringify(man)], {type: 'application/manifest+json'}));
+  } catch (e) {}
 }
 /* Home-screen icon in the chosen theme's colours (used when you tap Add to Home Screen) */
 function themeIcon(t) {
