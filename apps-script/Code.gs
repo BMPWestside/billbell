@@ -180,7 +180,7 @@ function processMessage_(msg) {
   var header = [msg.getFrom(), msg.getSubject(), fwd.from, fwd.subject].join('\n');
   var providers = getProviders_();
   var emailUrl = 'https://mail.google.com/mail/u/0/#all/' + msg.getId();
-  var base = { messageId: msg.getId(), emailUrl: emailUrl, source: 'email' };
+  var base = { messageId: msg.getId(), emailUrl: emailUrl, source: 'email', sender: fwd.from || msg.getFrom() };
 
   // 1) Each PDF / photo attachment is read on its own
   var docs = [];
@@ -230,6 +230,12 @@ function handleDoc_(text, emailDate, providers, base) {
   var info = parseBillText(text, emailDate);
   var p = matchProvider(text, providers);
   if (info.kind === 'unknown') return { result: 'skip: no amount' };
+  var newProvider = false;
+  if (!p && info.kind !== 'receipt') {
+    p = addNewProvider_(base.sender, text);
+    newProvider = !!p;
+  }
+  base = merge_(base, {}); delete base.sender;
 
   if (info.kind === 'receipt') {
     var matched = applyPayment_(p ? p.id : '', info.amount, info.receiptInvoices, info.paidDate, base.messageId);
@@ -250,6 +256,7 @@ function handleDoc_(text, emailDate, providers, base) {
   // Status
   var reasons = info.reasons.slice();
   if (!p) reasons.unshift('Unknown provider');
+  if (newProvider) reasons.unshift('New provider — check the name and category');
   if (info.kind === 'paid-bill') { bill.status = 'paid'; bill.paidDate = info.paidDate; }
   else if (reasons.length) bill.status = 'review';
   else bill.status = 'due';
@@ -337,6 +344,19 @@ function ocrText_(blob, name) {
     : Drive.Files.insert({ title: 'tmp-' + name, mimeType: blob.getContentType() }, blob, { ocr: true, ocrLanguage: 'en', convert: true });
   try { return DocumentApp.openById(file.id).getBody().getText(); }
   finally { try { DriveApp.getFileById(file.id).setTrashed(true); } catch (e) {} }
+}
+
+/** Saves a provider for a sender BillBell hasn't seen before, with its logo. */
+function addNewProvider_(sender, text) {
+  var np = makeProvider(sender, text);
+  if (!np) return null;
+  var existing = readTable_('Providers').filter(function (x) { return x.id === np.id || x.domain === np.domain; })[0];
+  if (existing) return existing;
+  try { np.logo = fetchLogo_(np.domain) || ''; } catch (e) { np.logo = ''; }
+  appendRow_('Providers', np);
+  delete _cache['Providers'];
+  Logger.log('New provider added: ' + np.name + ' (' + np.category + ')');
+  return np;
 }
 
 /* ======================= LOGOS ======================= */

@@ -454,7 +454,11 @@ const CAT_ICON = {
   'Internet': '<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>',
   'Telecommunications': '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/>',
   'Council Rates': '<path d="M3 21h18M5 21V10l7-5 7 5v11M10 21v-5h4v5"/>',
-  'Water': '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>'
+  'Water': '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11z"/>',
+  'Insurance': '<path d="M12 3l7 3v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10V6z"/>',
+  'Rego': '<path d="M5 17h14v-5l-2-5H7l-2 5zM5 12h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/>',
+  'Strata': '<path d="M5 21V4h10v17M15 9h4v12M8 8h1M11 8h1M8 12h1M11 12h1M8 16h1M11 16h1M3 21h18"/>',
+  'Subscriptions': '<path d="M4 7h16v12H4zM8 3h8M6 5h12"/>'
 };
 const catIcon = c => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${CAT_ICON[c] || '<circle cx="12" cy="12" r="8"/>'}</svg>`;
 const unpaid = () => S.bills.filter(b => b.status === 'due');
@@ -617,7 +621,10 @@ function renderReview() {
       <div class="head">${avatar(p, 1)}<div class="mid" style="flex:1"><div class="t" style="font-weight:900">${esc(p.name)}</div><div class="s small muted">${esc(p.category)}${b.invoiceNo ? ' · #' + esc(b.invoiceNo) : ''}</div></div></div>
       ${b.reason ? `<div class="why">${esc(b.reason)}</div>` : ''}
       <div class="fields">
-        <label class="f full">Provider<select name="provider">${providerOptions(b.provider)}</select></label>
+        ${/New provider/.test(b.reason || '') ? `<label class="f full">Provider name<input name="pname" value="${esc(p.name)}"></label>
+        <label class="f full">Category<select name="pcat">${CATEGORIES.map(c => `<option${c === p.category ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
+        <input type="hidden" name="provider" value="${esc(b.provider)}">`
+        : `<label class="f full">Provider<select name="provider">${providerOptions(b.provider)}</select></label>`}
         <label class="f">Amount ($)<input name="amount" inputmode="decimal" value="${b.amount ? b.amount.toFixed(2) : ''}"></label>
         <label class="f">Due date<input name="dueDate" type="date" value="${esc(b.dueDate)}"></label>
         <label class="f full">Status<select name="status"><option value="due">Still to pay</option><option value="paid">Already paid</option></select></label>
@@ -729,7 +736,8 @@ function openSettings() {
 }
 
 /* ================= Charts ================= */
-const CAT_COLOURS = {'Electricity': '#E2A93B', 'Gas': '#2E9D62', 'Internet': '#139C9F', 'Telecommunications': '#5B6BD6', 'Council Rates': '#C0563A', 'Water': '#3A8FD9', 'Other': '#8A94AD'};
+const CATEGORIES = ['Electricity', 'Gas', 'Water', 'Internet', 'Telecommunications', 'Council Rates', 'Insurance', 'Rego', 'Strata', 'Subscriptions', 'Other'];
+const CAT_COLOURS = {'Insurance': '#8E44AD', 'Rego': '#D9822B', 'Strata': '#6D4C41', 'Subscriptions': '#B03A5B', 'Electricity': '#E2A93B', 'Gas': '#2E9D62', 'Internet': '#139C9F', 'Telecommunications': '#5B6BD6', 'Council Rates': '#C0563A', 'Water': '#3A8FD9', 'Other': '#8A94AD'};
 const catColour = c => CAT_COLOURS[c] || '#8A94AD';
 const C = { mode: '12m', month: monthKey(today()), fy: null, charts: [] };
 
@@ -853,8 +861,17 @@ document.addEventListener('click', e => {
       if (!(amount > 0)) return toast('Enter the amount');
       if (g('provider') === 'unknown') return toast('Choose the provider');
       if (!g('dueDate')) return toast('Enter the due date');
-      const st = g('status');
-      run(() => update(card.dataset.id, {provider: g('provider'), amount: amount.toFixed(2), dueDate: g('dueDate'), status: st, paidDate: st === 'paid' ? today() : '', reason: ''}), 'Confirmed');
+      const st = g('status'), pn = card.querySelector('[name=pname]');
+      run(async () => {
+        let category;
+        if (pn) {
+          const name = pn.value.trim() || prov(g('provider')).name;
+          category = g('pcat');
+          const words = name.split(/\s+/);
+          await api('provider', {provider: {id: g('provider'), name, category, short: (words.length > 1 ? words[0][0] + words[1][0] : name.slice(0, 2)).toUpperCase()}});
+        }
+        await update(card.dataset.id, {provider: g('provider'), ...(category ? {category} : {}), amount: amount.toFixed(2), dueDate: g('dueDate'), status: st, paidDate: st === 'paid' ? today() : '', reason: ''});
+      }, 'Confirmed');
       break;
     }
     case 'addManual': {
@@ -1083,6 +1100,7 @@ function makeDemo() {
 let demoStore = null;
 function demoAction(action, payload) {
   if (action === 'update') { const b = S.bills.find(x => x.id === payload.id); Object.assign(b, payload.patch, {amount: Number(payload.patch.amount ?? b.amount)}); }
+  else if (action === 'provider') { const pr = S.providers.find(x => x.id === payload.provider.id); if (pr) Object.assign(pr, payload.provider); }
   else if (action === 'add') S.bills.push({id: 'm' + Date.now(), category: prov(payload.bill.provider).category, ...payload.bill, amount: Number(payload.bill.amount)});
   else if (action === 'scan' || action === 'testNotify') toast('Demo mode — connect your scanner in Settings');
   render(); return Promise.resolve();

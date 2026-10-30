@@ -59,6 +59,61 @@ function matchProvider(text, providers) {
   return null;
 }
 
+/* ---------- New providers ---------- */
+
+var PERSONAL_DOMAINS = /(^|\.)(gmail|googlemail|icloud|me|mac|outlook|hotmail|live|yahoo|bigpond)\.(com|com\.au|net|net\.au)$/i;
+var CATEGORY_WORDS = [
+  ['Electricity', /electricity|kwh|energy usage|power bill|solar feed/i],
+  ['Gas', /\bgas\b|\blpg\b|cylinder|megajoules|\bmj\b/i],
+  ['Water', /\bwater\b|sewerage|wastewater/i],
+  ['Internet', /\bnbn\b|internet|broadband|wi-?fi|fibre/i],
+  ['Telecommunications', /mobile|\bsim\b|prepaid|postpaid|phone plan|data plan/i],
+  ['Council Rates', /council|\brates\b|instalment notice/i],
+  ['Insurance', /insurance|policy|premium|insurer/i],
+  ['Rego', /registration|\brego\b|\bctp\b|transport for nsw|service nsw|e-?toll|linkt/i],
+  ['Strata', /strata|levy|owners corporation|body corporate/i],
+  ['Subscriptions', /subscription|membership|renewal/i]
+];
+var NEW_COLOURS = ['#5B6BD6', '#139C9F', '#C0563A', '#2E7D32', '#8E44AD', '#D9822B', '#0077C8', '#B03A5B', '#3A7D7B', '#6D4C41'];
+
+/** "AGL <hello@mail.agl.com.au>" → { name: 'AGL', email, domain: 'agl.com.au' } */
+function senderInfo(from) {
+  var s = String(from || '');
+  var email = (s.match(/<([^>]+)>/) || s.match(/([^\s<>"]+@[^\s<>"]+)/) || [])[1] || '';
+  var name = s.replace(/<[^>]*>/, '').replace(/["']/g, '').trim();
+  var host = (email.split('@')[1] || '').toLowerCase();
+  var parts = host.split('.');
+  var keep = /\.(com|net|org|gov|edu|asn|id)\.au$|\.co\.(uk|nz)$/.test(host) ? 3 : 2;
+  var domain = parts.slice(-keep).join('.');
+  return { name: name, email: email.toLowerCase(), domain: domain };
+}
+
+function guessCategory(text) {
+  var t = String(text || '').slice(0, 6000);
+  for (var i = 0; i < CATEGORY_WORDS.length; i++) if (CATEGORY_WORDS[i][1].test(t)) return CATEGORY_WORDS[i][0];
+  return 'Other';
+}
+
+/** Builds a provider row for a sender BillBell hasn't seen. Returns null for personal email addresses. */
+function makeProvider(from, text) {
+  var si = senderInfo(from);
+  if (!si.domain || PERSONAL_DOMAINS.test(si.domain)) return null;
+  var brand = si.domain.split('.')[0];
+  var name = si.name && !/@|no.?reply|do.?not.?reply|notifications?|billing|accounts?$/i.test(si.name)
+    ? si.name.replace(/\s+(billing|accounts|notifications?|team|customer service)$/i, '')
+    : brand.charAt(0).toUpperCase() + brand.slice(1);
+  var id = brand.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  var hash = 0; for (var i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  var words = name.split(/\s+/).filter(Boolean);
+  return {
+    id: id, name: name, category: guessCategory(name + ' ' + si.domain + ' ' + text),
+    match: [brand, si.domain.replace(/\./g, '\\.'), name.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()].filter(Boolean).join('|'),
+    colour: NEW_COLOURS[hash % NEW_COLOURS.length], cycle: 30,
+    payUrl: 'https://www.' + si.domain, short: (words.length > 1 ? words[0][0] + words[1][0] : name.slice(0, 2)).toUpperCase(),
+    domain: si.domain, active: 'true'
+  };
+}
+
 /** Pulls the original sender/subject/date out of a forwarded email body. */
 function parseForwarded(body) {
   var out = { from: '', subject: '', date: '' };
@@ -224,5 +279,6 @@ function missingBills(bills, providers, todayIso) {
 if (typeof module !== 'undefined') {
   module.exports = { parseBillText: parseBillText, parseDateStr: parseDateStr, matchProvider: matchProvider,
     parseForwarded: parseForwarded, isDuplicateBill: isDuplicateBill, priceRise: priceRise,
-    missingBills: missingBills, DEFAULT_PROVIDERS: DEFAULT_PROVIDERS };
+    missingBills: missingBills, DEFAULT_PROVIDERS: DEFAULT_PROVIDERS,
+    senderInfo: senderInfo, guessCategory: guessCategory, makeProvider: makeProvider };
 }
