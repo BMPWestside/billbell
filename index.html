@@ -76,15 +76,17 @@ main{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;oversc
 .alert-card .s{font-size:13px;color:var(--muted)}
 
 /* Tiles */
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
-.tile{background:var(--card);border-radius:20px;aspect-ratio:1;max-width:100%;display:grid;place-items:center;box-shadow:var(--shadow);position:relative}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.tile{background:var(--card);border-radius:16px;padding:10px 0 18px;max-width:100%;display:grid;place-items:center;box-shadow:var(--shadow);position:relative}
+.tile .av{width:52px;height:52px;border-radius:14px;font-size:17px}
+.tile .av img{padding:3px}
 .tile:active{transform:scale(.97)}
 .av{width:64px;height:64px;border-radius:18px;display:grid;place-items:center;color:#fff;font-weight:900;font-size:21px;letter-spacing:-.5px;position:relative;overflow:hidden;flex:none}
 .av img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#FFFFFF;padding:8px}
 .av.sm img{padding:5px}
-.tile .cat{position:absolute;left:10px;bottom:9px;width:18px;height:18px;color:var(--muted);opacity:.75}
+.tile .cat{position:absolute;left:7px;bottom:4px;width:13px;height:13px;color:var(--muted);opacity:.75}
 .tile .cat svg{width:100%;height:100%}
-.dot{position:absolute;top:10px;right:10px;width:13px;height:13px;border-radius:99px;box-shadow:0 0 0 3px var(--card)}
+.dot{position:absolute;top:6px;right:6px;width:10px;height:10px;border-radius:99px;box-shadow:0 0 0 2px var(--card)}
 .dot.urgent{background:#E03B3B}.dot.due{background:#F08A24}.dot.auto{background:#2F80ED}.dot.paid{background:#2E9D62}
 .legend{display:flex;flex-wrap:wrap;gap:8px 14px;justify-content:center;margin:14px 0 0;font-size:12.5px;color:var(--muted);font-weight:800}
 .legend span{display:flex;align-items:center;gap:6px}
@@ -261,7 +263,7 @@ select.period{width:100%;padding:11px;border-radius:12px;border:1.5px solid var(
 .tile{animation:rise .32s ease both;animation-delay:calc(var(--i,0) * 35ms)}
 @keyframes rise{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
 .tile .dot.urgent{animation:pulse 1.8s ease-out infinite}
-@keyframes pulse{0%{box-shadow:0 0 0 3px var(--card),0 0 0 3px rgba(224,59,59,.55)}70%{box-shadow:0 0 0 3px var(--card),0 0 0 11px rgba(224,59,59,0)}100%{box-shadow:0 0 0 3px var(--card),0 0 0 11px rgba(224,59,59,0)}}
+@keyframes pulse{0%{box-shadow:0 0 0 2px var(--card),0 0 0 2px rgba(224,59,59,.55)}70%{box-shadow:0 0 0 2px var(--card),0 0 0 7px rgba(224,59,59,0)}100%{box-shadow:0 0 0 2px var(--card),0 0 0 7px rgba(224,59,59,0)}}
 @media (prefers-reduced-motion: reduce){.tile,.tile .dot.urgent,.toast .tick path{animation:none}.toast .tick path{stroke-dashoffset:0}.swipe .bill{transition:none}}
 
 /* Portrait only */
