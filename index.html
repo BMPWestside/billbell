@@ -269,6 +269,7 @@ select.period{width:100%;padding:11px;border-radius:12px;border:1.5px solid var(
 .rotate svg{width:54px;height:54px;stroke:var(--gold)}
 .rotate small{color:#C9D0E6;font-weight:700;max-width:320px}
 @media (orientation: landscape) and (max-height: 500px){.rotate{display:flex}}
+.newprov[hidden]{display:none!important}
 /* Lock screen */
 #pinPad{display:flex;flex-direction:column;align-items:center;gap:20px}
 .faceid{display:flex;flex-direction:column;align-items:center;gap:12px;color:#fff;font-weight:800;font-size:16px;padding:12px}
@@ -500,7 +501,10 @@ function render() {
   $('#nReview').hidden = !review().length;
   renderRing();
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === S.tab));
+  const ae = document.activeElement, focused = ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName) && ae.closest('#main .rcard');
+  if (focused && S.tab === 'review') return;   // don't redraw while you're typing in Review
   $('#main').innerHTML = S.tab === 'due' ? renderDue() : S.tab === 'paid' ? renderPaid() : renderReview();
+  if (S.tab === 'review') restoreDrafts();
 }
 
 function billState(b) {
@@ -610,8 +614,12 @@ function renderPaid() {
 
 function providerOptions(sel) {
   return S.providers.map(p => `<option value="${esc(p.id)}"${p.id === sel ? ' selected' : ''}>${esc(p.name)} — ${esc(p.category)}</option>`).join('') +
-    (sel === 'unknown' || !sel ? '<option value="unknown" selected>Choose provider…</option>' : '');
+    (sel === 'unknown' || !sel ? '<option value="unknown" selected>Choose provider…</option>' : '') +
+    '<option value="__new">+ New provider…</option>';
 }
+const newProvFields = (show) => `<div class="newprov fields full" style="grid-column:1/-1;margin:0"${show ? '' : ' hidden'}>
+  <label class="f full">New provider name<input name="pname" placeholder="e.g. Apple" autocomplete="off"></label>
+  <label class="f full">Category<select name="pcat">${CATEGORIES.map(c => `<option>${c}</option>`).join('')}</select></label></div>`;
 
 function renderReview() {
   const list = review();
@@ -624,7 +632,7 @@ function renderReview() {
         ${/New provider/.test(b.reason || '') ? `<label class="f full">Provider name<input name="pname" value="${esc(p.name)}"></label>
         <label class="f full">Category<select name="pcat">${CATEGORIES.map(c => `<option${c === p.category ? ' selected' : ''}>${c}</option>`).join('')}</select></label>
         <input type="hidden" name="provider" value="${esc(b.provider)}">`
-        : `<label class="f full">Provider<select name="provider">${providerOptions(b.provider)}</select></label>`}
+        : `<label class="f full">Provider<select name="provider" data-newprov>${providerOptions(b.provider)}</select></label>${newProvFields(false)}`}
         <label class="f">Amount ($)<input name="amount" inputmode="decimal" value="${b.amount ? b.amount.toFixed(2) : ''}"></label>
         <label class="f">Due date<input name="dueDate" type="date" value="${esc(b.dueDate)}"></label>
         <label class="f full">Status<select name="status"><option value="due">Still to pay</option><option value="paid">Already paid</option></select></label>
@@ -703,7 +711,7 @@ function openAdd() {
       <label class="btn gold block">${ICON.cam} Take photo / choose file<input id="upFile" type="file" accept="image/*,application/pdf" hidden></label></div>
     <div class="card"><h3>Type it in</h3><div class="sub">For bills that don't come by email.</div>
       <div class="fields">
-        <label class="f full">Provider<select id="mProv">${pOpts}</select></label>
+        <label class="f full">Provider<select id="mProv" name="provider" data-newprov>${pOpts}</select></label>${newProvFields(false)}
         <label class="f">Amount ($)<input id="mAmt" inputmode="decimal" placeholder="0.00"></label>
         <label class="f">Due date<input id="mDue" type="date" value="${addDays(today(), 14)}"></label>
         <label class="f full">Status<select id="mStatus"><option value="due">Still to pay</option><option value="paid">Already paid</option></select></label>
@@ -818,6 +826,33 @@ function exportCsv() {
 }
 
 /* ================= Actions ================= */
+const PROV_COLOURS = ['#5B6BD6', '#139C9F', '#C0563A', '#2E7D32', '#8E44AD', '#D9822B', '#0077C8', '#B03A5B', '#3A7D7B', '#6D4C41'];
+function providerFromForm(box, pid) {
+  const name = box.querySelector('[name=pname]').value.trim() || prov(pid).name;
+  const category = box.querySelector('[name=pcat]').value;
+  const words = name.split(/\s+/);
+  const id = pid === '__new' ? (name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'provider-' + Date.now().toString(36)) : pid;
+  const existing = S.providers.find(p => p.id === id);
+  return {id, name, category, short: (words.length > 1 ? words[0][0] + words[1][0] : name.slice(0, 2)).toUpperCase(),
+    ...(existing ? {} : {match: name.toLowerCase().replace(/[^a-z0-9 ]/g, ''), colour: PROV_COLOURS[id.length % PROV_COLOURS.length], cycle: 30, active: 'true'})};
+}
+document.addEventListener('change', e => {
+  if (!e.target.matches('[data-newprov]')) return;
+  const box = e.target.closest('.rcard, .card'); const nf = box && box.querySelector('.newprov');
+  if (nf) { nf.hidden = e.target.value !== '__new'; if (!nf.hidden) nf.querySelector('[name=pname]').focus(); }
+});
+/* Keep what you've typed in Review if the list refreshes in the background */
+const drafts = {};
+document.addEventListener('input', e => { const c = e.target.closest('.rcard'); if (c && e.target.name) (drafts[c.dataset.id] = drafts[c.dataset.id] || {})[e.target.name] = e.target.value; });
+document.addEventListener('change', e => { const c = e.target.closest('.rcard'); if (c && e.target.name) (drafts[c.dataset.id] = drafts[c.dataset.id] || {})[e.target.name] = e.target.value; });
+function restoreDrafts() {
+  document.querySelectorAll('.rcard').forEach(c => {
+    const d = drafts[c.dataset.id]; if (!d) return;
+    Object.entries(d).forEach(([k, v]) => { const el = c.querySelector(`[name="${k}"]`); if (el) el.value = v; });
+    const sel = c.querySelector('[data-newprov]'), nf = c.querySelector('.newprov');
+    if (sel && nf) nf.hidden = sel.value !== '__new';
+  });
+}
 async function run(fn, okMsg) {
   try { await fn(); if (okMsg) toast(okMsg); } catch (e) { toast('Something went wrong: ' + e.message); load(); }
 }
@@ -860,23 +895,32 @@ document.addEventListener('click', e => {
       const amount = parseFloat(g('amount').replace(/[$,]/g, ''));
       if (!(amount > 0)) return toast('Enter the amount');
       if (g('provider') === 'unknown') return toast('Choose the provider');
+      if (g('provider') === '__new' && !card.querySelector('[name=pname]').value.trim()) return toast('Type the new provider\'s name');
       if (!g('dueDate')) return toast('Enter the due date');
       const st = g('status'), pn = card.querySelector('[name=pname]');
       run(async () => {
-        let category;
-        if (pn) {
-          const name = pn.value.trim() || prov(g('provider')).name;
-          category = g('pcat');
-          const words = name.split(/\s+/);
-          await api('provider', {provider: {id: g('provider'), name, category, short: (words.length > 1 ? words[0][0] + words[1][0] : name.slice(0, 2)).toUpperCase()}});
+        let category, pid = g('provider');
+        if (pn && (pid === '__new' || !card.querySelector('[data-newprov]'))) {
+          const np = providerFromForm(card, pid);
+          category = np.category; pid = np.id;
+          await api('provider', {provider: np});
         }
-        await update(card.dataset.id, {provider: g('provider'), ...(category ? {category} : {}), amount: amount.toFixed(2), dueDate: g('dueDate'), status: st, paidDate: st === 'paid' ? today() : '', reason: ''});
+        await update(card.dataset.id, {provider: pid, ...(category ? {category} : {}), amount: amount.toFixed(2), dueDate: g('dueDate'), status: st, paidDate: st === 'paid' ? today() : '', reason: ''});
       }, 'Confirmed');
       break;
     }
     case 'addManual': {
       const amount = parseFloat(($('#mAmt').value || '').replace(/[$,]/g, ''));
       if ($('#mProv').value === 'unknown' || !$('#mProv').value) return toast('Choose the provider');
+      if ($('#mProv').value === '__new') {
+        const box = $('#sheetBody');
+        if (!box.querySelector('[name=pname]').value.trim()) return toast('Type the new provider\'s name');
+        if (!(amount > 0)) return toast('Enter the amount');
+        const np = providerFromForm(box, '__new'), st = $('#mStatus').value, due = $('#mDue').value;
+        closeSheet();
+        run(async () => { await api('provider', {provider: np}); await api('add', {bill: {provider: np.id, amount: amount.toFixed(2), dueDate: due, status: st, paidDate: st === 'paid' ? today() : ''}}); }, 'Bill added');
+        break;
+      }
       if (!(amount > 0)) return toast('Enter the amount');
       const st = $('#mStatus').value;
       closeSheet();
@@ -1100,7 +1144,7 @@ function makeDemo() {
 let demoStore = null;
 function demoAction(action, payload) {
   if (action === 'update') { const b = S.bills.find(x => x.id === payload.id); Object.assign(b, payload.patch, {amount: Number(payload.patch.amount ?? b.amount)}); }
-  else if (action === 'provider') { const pr = S.providers.find(x => x.id === payload.provider.id); if (pr) Object.assign(pr, payload.provider); }
+  else if (action === 'provider') { const pr = S.providers.find(x => x.id === payload.provider.id); if (pr) Object.assign(pr, payload.provider); else S.providers.push({...payload.provider}); }
   else if (action === 'add') S.bills.push({id: 'm' + Date.now(), category: prov(payload.bill.provider).category, ...payload.bill, amount: Number(payload.bill.amount)});
   else if (action === 'scan' || action === 'testNotify') toast('Demo mode — connect your scanner in Settings');
   render(); return Promise.resolve();
