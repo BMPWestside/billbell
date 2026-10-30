@@ -72,6 +72,18 @@ function setup() {
   Logger.log('Next: Deploy → New deployment → Web app, then run sendSetupLink.');
 }
 
+/** Reads again any emails that were skipped before (run this after updating the scanner). */
+function rescanSkipped() {
+  var sh = sheet_('Log'), v = sh.getDataRange().getValues(), removed = 0;
+  for (var r = v.length - 1; r >= 1; r--) {
+    if (/^skip|^error/.test(String(v[r][3]))) { sh.deleteRow(r + 1); removed++; }
+  }
+  delete _cache['Log'];
+  Logger.log('Reading ' + removed + ' skipped emails again…');
+  var res = scanBills_(CONFIG.BACKFILL_DAYS, false);
+  Logger.log('Done. New bills found: ' + res.added);
+}
+
 /** Checks the app connection from inside Google and shows the app key. */
 function testApp() {
   var key = PropertiesService.getScriptProperties().getProperty('API_KEY');

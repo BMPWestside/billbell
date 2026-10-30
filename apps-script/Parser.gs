@@ -107,7 +107,7 @@ function makeProvider(from, text) {
   var words = name.split(/\s+/).filter(Boolean);
   return {
     id: id, name: name, category: guessCategory(name + ' ' + si.domain + ' ' + text),
-    match: [brand, si.domain.replace(/\./g, '\\.'), name.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()].filter(Boolean).join('|'),
+    match: [brand, si.domain.replace(/\./g, '\\.'), name.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim()].filter(function (x, i, arr) { return x && arr.indexOf(x) === i; }).join('|'),
     colour: NEW_COLOURS[hash % NEW_COLOURS.length], cycle: 30,
     payUrl: 'https://www.' + si.domain, short: (words.length > 1 ? words[0][0] + words[1][0] : name.slice(0, 2)).toUpperCase(),
     domain: si.domain, active: 'true'
@@ -168,11 +168,18 @@ function parseBillText(text, emailDateIso) {
     new RegExp('\\btotal\\b(?!\\s*(?:owing|excl|ex\\b|payments|for this|gst))[^0-9$]{0,20}' + AMT, 'i')
   ]);
   r.amount = toNum_(amt) || owing;
+  if (!r.amount && /tax invoice|invoice|renewal|subscription|your receipt|billing/i.test(t)) {
+    // Price shown without a label (e.g. Apple): use the largest dollar amount on the page
+    var all = t.match(/\$\s*(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}/g) || [];
+    var vals = all.map(function (x) { return toNum_(x.replace(/[$\s]/g, '')); }).filter(function (v) { return v > 0; });
+    if (vals.length) { r.amount = Math.max.apply(null, vals); r.guessedAmount = true; }   // the total is the biggest figure
+  }
 
   // ---- Dates ----
   r.dueDate = parseDateStr(firstMatch_(t, [
     new RegExp('(?:this bill due date|due date|payment due|instalment due|due by|due on|pay by|please pay by)[^0-9a-z]{0,30}' + DATE, 'i'),
     new RegExp('(?:debit date|will be debited on)[^0-9a-z]{0,30}' + DATE, 'i'),
+    new RegExp('(?:next billing date|next payment date|renewal date|billing date|charge date|will be (?:charged|billed|renewed) on)[^0-9a-z]{0,30}' + DATE, 'i'),
     new RegExp('\\bdue\\b[^0-9a-z]{0,15}' + DATE, 'i')
   ]));
   r.issueDate = parseDateStr(firstMatch_(t, [
@@ -210,7 +217,7 @@ function parseBillText(text, emailDateIso) {
     /(?:bill(?:ing)? period|invoice period|supply period|period)\s*:?\s*(\d{1,2}\s*[a-z]{3}[a-z]*\s*\d{0,4}\s*(?:to|\-|–)\s*\d{1,2}\s*[a-z]{3}[a-z]*\s*\d{2,4})/i
   ]);
 
-  r.autopay = /(?:will be|is) (?:automatically )?(?:debited|deducted)|automatically debited|direct debit date|payment method\s*:?\s*(?:automatic|direct debit)/i.test(t);
+  r.autopay = /(?:will be|is) (?:automatically )?(?:debited|deducted)|automatically debited|direct debit date|payment method\s*:?\s*(?:automatic|direct debit)|next billing date|auto-?renew|will be (?:automatically )?(?:charged|billed|renewed)/i.test(t);
 
   // Credits on this bill = payments for earlier bills (e.g. "$84.29 CR")
   var cre = /\$?((?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2})\s*cr\b/gi, cm;
@@ -225,6 +232,7 @@ function parseBillText(text, emailDateIso) {
     }
   }
   if (!r.amount) r.reasons.push('No amount found');
+  if (r.guessedAmount) r.reasons.push('Amount taken from the price on the invoice — check it');
   if (r.kind === 'bill' && !r.dueDate) r.reasons.push('No due date found');
   if (r.dueNow) r.reasons.push('Bill says "Due now" — due date set to the invoice date');
   return r;
