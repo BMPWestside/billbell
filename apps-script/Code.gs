@@ -385,7 +385,7 @@ function refreshLogos() {
   var done = {};
   readTable_('Providers').forEach(function (p) {
     if (!p.domain) return;
-    if (p.logo && !/^data:/.test(p.logo)) return;          // keep a logo you set yourself
+    if (p.logo) return;          // keep logos already saved, including ones you uploaded in the app
     var uri = done[p.domain] || fetchLogo_(p.domain);
     if (uri) { done[p.domain] = uri; updateRow_('Providers', p.id, { logo: uri }); }
     Logger.log(p.name + ': ' + (uri ? 'logo saved' : 'no logo found, initials will show'));

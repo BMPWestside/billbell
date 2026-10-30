@@ -414,7 +414,8 @@ function jsonp(params, timeoutMs = 60000) {
 async function api(action, payload) {
   if (S.demo) return demoAction(action, payload);
   let data;
-  if (action === 'upload') {
+  const big = JSON.stringify(payload || {}).length > 1500;
+  if (action === 'upload' || big) {
     await fetch(S.api, { method: 'POST', mode: 'no-cors', headers: {'Content-Type': 'text/plain;charset=utf-8'}, body: JSON.stringify({key: S.key, action, ...payload}) });
     data = await jsonp({action: 'data'});
   } else data = await jsonp({action, payload: JSON.stringify(payload || {})}, action === 'scan' ? 300000 : 60000);
@@ -691,7 +692,7 @@ function openProvider(pid) {
   const p = prov(pid);
   const list = unpaid().filter(b => b.provider === pid).sort((a, b) => (a.dueDate || '') < (b.dueDate || '') ? -1 : 1);
   const lastPaid = paid().filter(b => b.provider === pid).sort((a, b) => (a.paidDate || '') < (b.paidDate || '') ? 1 : -1)[0];
-  let h = sheetHead(esc(p.name) + `<div class="small muted" style="font-weight:700">${esc(p.category)}</div>`, avatar(p, 1));
+  let h = sheetHead(esc(p.name) + `<div class="small muted" style="font-weight:700">${esc(p.category)} · <button data-logo="${esc(p.id)}" style="color:var(--linkc);font-weight:800;font-size:13px;padding:0">Change logo</button></div>`, avatar(p, 1));
   h += list.length ? list.map(billCard).join('') + '<p class="swipe-hint">Swipe a bill left to mark it paid</p>' : (lastPaid ? billCard(lastPaid) : '<div class="empty">No bills yet.</div>');
   h += historyBars(pid);
   if (lastPaid && list.length) h += `<p class="small muted" style="margin:4px">Last paid ${money(lastPaid.amount)} on ${niceY(lastPaid.paidDate)}.</p>`;
@@ -738,8 +739,8 @@ function openSettings() {
         <button class="btn ${ls.get('bb_bio') ? 'ghost' : 'navy'} block" data-act="${ls.get('bb_bio') ? 'bioOff' : 'bioOn'}" id="bioSet" ${pinOn ? '' : 'disabled style="opacity:.5"'}>${ls.get('bb_bio') ? 'Turn off Face ID' : 'Use Face ID to unlock'}</button>
       </div>
       <p class="small muted" style="margin:8px 0 0">${pinOn ? 'Your PIN stays as the backup if Face ID doesn\'t work.' : 'Set a PIN first. It\'s the backup if Face ID doesn\'t work.'}</p></div>
-    <div class="card"><h3>Providers</h3><div class="sub">Each provider's category decides where its spending goes in the charts. Change these in the Providers tab of your BillBell Data sheet.</div>
-      <div class="list" style="box-shadow:none;border:1px solid var(--line)">${S.providers.map(p => `<div class="row">${avatar(p, 1)}<div class="mid"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.category)}${p.cycle ? ' · every ~' + p.cycle + ' days' : ' · irregular'}</div></div></div>`).join('')}</div></div>
+    <div class="card"><h3>Providers</h3><div class="sub">Tap a provider to change its logo. Each provider's category decides where its spending goes in the charts.</div>
+      <div class="list" style="box-shadow:none;border:1px solid var(--line)">${S.providers.map(p => `<button class="row" style="width:100%;text-align:left" data-logo="${esc(p.id)}">${avatar(p, 1)}<div class="mid"><div class="t">${esc(p.name)}</div><div class="s">${esc(p.category)}${p.cycle ? ' · every ~' + p.cycle + ' days' : ' · irregular'}</div></div><span class="small" style="color:var(--linkc);font-weight:800">Logo</span></button>`).join('')}</div></div>
     <div class="card"><h3>Export</h3><div class="sub">All bills as a spreadsheet (CSV) — handy at tax time.</div><button class="btn ghost block" data-act="csv">Download CSV</button></div>`);
 }
 
@@ -824,6 +825,42 @@ function exportCsv() {
   a.href = URL.createObjectURL(new Blob([csv], {type: 'text/csv'}));
   a.download = 'billbell-' + today() + '.csv'; document.body.appendChild(a); a.click(); a.remove();
 }
+
+/* ================= Provider logos ================= */
+function openLogo(pid) {
+  const p = prov(pid);
+  openSheet(sheetHead('Logo', avatar(p, 1)) + `
+    <div class="card" style="text-align:center"><div style="display:flex;justify-content:center;margin:4px 0 12px">${avatar(p)}</div>
+      <h3>${esc(p.name)}</h3><div class="sub">Pick a picture of their logo, such as a screenshot from their website or app. It's cropped to a square.</div>
+      <label class="btn gold block">${ICON.cam} Choose logo<input id="logoFile" data-pid="${esc(p.id)}" type="file" accept="image/*" hidden></label>
+      ${p.logo ? `<button class="btn ghost block" style="margin-top:8px" data-act="logoRemove" data-id="${esc(p.id)}">Remove logo (use initials)</button>` : ''}
+    </div>`);
+}
+async function logoFromFile(file) {
+  const img = await createImageBitmap(file);
+  const n = 160, c = document.createElement('canvas'); c.width = c.height = n;
+  const x = c.getContext('2d'); x.fillStyle = '#FFFFFF'; x.fillRect(0, 0, n, n);
+  // fit the whole logo inside the square with a small margin
+  const pad = 10, sc = Math.min((n - 2 * pad) / img.width, (n - 2 * pad) / img.height);
+  const w = img.width * sc, h = img.height * sc;
+  x.imageSmoothingQuality = 'high'; x.drawImage(img, (n - w) / 2, (n - h) / 2, w, h);
+  const png = c.toDataURL('image/png');
+  return png.length < 30000 ? png : c.toDataURL('image/jpeg', 0.85);
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-logo]'); if (!b) return;
+  e.stopPropagation(); openLogo(b.dataset.logo);
+}, true);
+document.addEventListener('change', async e => {
+  if (e.target.id !== 'logoFile' || !e.target.files[0]) return;
+  const pid = e.target.dataset.pid;
+  try {
+    const logo = await logoFromFile(e.target.files[0]);
+    closeSheet();
+    await run(() => api('provider', {provider: {id: pid, logo}}), 'Logo saved');
+    if (S.demo) { prov(pid).logo = logo; render(); }
+  } catch (err) { toast('Couldn\'t read that picture. Try a PNG or JPG.'); }
+});
 
 /* ================= Actions ================= */
 const PROV_COLOURS = ['#5B6BD6', '#139C9F', '#C0563A', '#2E7D32', '#8E44AD', '#D9822B', '#0077C8', '#B03A5B', '#3A7D7B', '#6D4C41'];
@@ -940,6 +977,7 @@ document.addEventListener('click', e => {
     case 'scan': closeSheet(); toast('Checking your email…'); run(() => api('scan', {}), 'Email checked'); break;
     case 'testNotify': run(() => api('testNotify', {}), 'Test alert sent'); break;
     case 'csv': exportCsv(); break;
+    case 'logoRemove': closeSheet(); run(() => api('provider', {provider: {id: t.dataset.id, logo: ''}}), 'Logo removed'); if (S.demo) { prov(t.dataset.id).logo = ''; render(); } break;
     case 'pinOn': closeSheet(); setPin(); break;
     case 'pinOff': ls.del('bb_pin'); ls.del('bb_bio'); closeSheet(); toast('App lock removed'); break;
     case 'bioOn': if (ls.get('bb_pin')) enableBio(); break;
